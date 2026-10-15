@@ -5,7 +5,8 @@ import wasmUrl from 'manifold-3d/manifold.wasm?url';
 import { categories, defaults, dimensions, makeParts, parameterLabels, validate, type Category, type Params, type Part } from './model';
 import { makeSolid } from './solids';
 import { geometryFromSolid } from './geometry';
-import { makeHardware, disposeHardware, type CosmeticHardware } from './hardware';
+import { makeHardware, disposeHardware, makeJoinery, disposeJoinery, type CosmeticHardware } from './hardware';
+import { makeJoinery as joineryItems } from './joinery';
 import { createDrawingPage } from './drawing-page';
 import { m } from './paraglide/messages.js';
 import { getLocale, locales, setLocale } from './paraglide/runtime.js';
@@ -58,7 +59,7 @@ $('#app').innerHTML = `
       <div class="viewport-caption"><span id="view-name">${m.assembled_view()}</span><span id="size-caption"></span></div>
       <div id="loading">${m.loading()}</div>
       <div class="viewport-footer"><span>${m.viewport_help()}</span><span id="visible-count"></span></div>
-      <div class="display-controls"><label><input id="edges" type="checkbox" checked> ${m.edges()}</label><label><input id="ghost" type="checkbox"> ${m.ghost_others()}</label><label><input id="guides" type="checkbox" checked> ${m.guides()}</label><label><input id="hardware" type="checkbox" checked> ${m.hardware()}</label></div>
+      <div class="display-controls"><label><input id="edges" type="checkbox" checked> ${m.edges()}</label><label><input id="ghost" type="checkbox"> ${m.ghost_others()}</label><label><input id="guides" type="checkbox" checked> ${m.guides()}</label><label><input id="hardware" type="checkbox" checked> ${m.hardware()}</label><label><input id="joinery" type="checkbox"> ${m.joinery()}</label></div>
     </div>
     <aside class="right-panel">
       <div class="tabs"><button data-tab="inspect" class="active">${m.tab_inspect()}</button><button data-tab="parameters">${m.tab_parameters()}</button></div>
@@ -76,7 +77,7 @@ $('#app').innerHTML = `
   <div id="drawings-page" hidden></div>
   <div id="toast" role="status" hidden></div>`;
 
-type Entry = { part: Part; root: THREE.Group; mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>; edges: THREE.LineSegments; pivot: THREE.Group; home: THREE.Vector3; hardware: CosmeticHardware };
+type Entry = { part: Part; root: THREE.Group; mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardMaterial>; edges: THREE.LineSegments; pivot: THREE.Group; home: THREE.Vector3; hardware: CosmeticHardware; joinery: THREE.Group };
 let entries: Entry[] = [];
 let selected: string | null = null;
 let mode = 'assembled';
@@ -169,6 +170,7 @@ function clearModel() {
     entry.edges.geometry.dispose();
     (entry.edges.material as THREE.Material).dispose();
     disposeHardware(entry.hardware);
+    disposeJoinery(entry.joinery);
   }
   entries = [];
 }
@@ -186,6 +188,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-page]').forEach(button => bu
 
 function build() {
   const parts = makeParts(params);
+  const { items } = joineryItems(params);
   const next: Entry[] = [];
   try {
     for (const part of parts) {
@@ -208,14 +211,16 @@ function build() {
       pivot.add(root);
       const home = new THREE.Vector3(part.origin[2], part.origin[1], part.origin[0]);
       const hardware = makeHardware(part, params);
-      root.add(hardware.attached);
-      next.push({ part, root, mesh, edges, pivot, home, hardware });
+      const joinery = makeJoinery(part, items);
+      root.add(hardware.attached, joinery);
+      next.push({ part, root, mesh, edges, pivot, home, hardware, joinery });
     }
   } catch (error) {
     for (const entry of next) {
       entry.mesh.geometry.dispose(); entry.mesh.material.dispose();
       entry.edges.geometry.dispose(); (entry.edges.material as THREE.Material).dispose();
       disposeHardware(entry.hardware);
+      disposeJoinery(entry.joinery);
     }
     throw error;
   }
@@ -296,15 +301,17 @@ function updateHardware() {
 function updateVisibility() {
   let count = 0;
   const ghost = $('#ghost').matches(':checked');
+  const joinery = $('#joinery').matches(':checked');
   for (const entry of entries) {
     const active = selected === entry.part.id;
     entry.pivot.visible = mode === 'part' ? active : visibleCategories.has(entry.part.category) && (!isolated || active);
     if (entry.pivot.visible) count++;
-    const ghosted = ghost && !!selected && !active;
+    entry.joinery.visible = joinery;
+    const ghosted = joinery || ghost && !!selected && !active;
     const material = entry.mesh.material;
     if (material.transparent !== ghosted) material.needsUpdate = true;
     material.transparent = ghosted;
-    material.opacity = ghosted ? 0.3 : 1;
+    material.opacity = joinery ? 0.18 : ghosted ? 0.3 : 1;
     material.depthWrite = !ghosted;
     entry.mesh.castShadow = entry.mesh.receiveShadow = !ghosted;
     entry.mesh.material.emissive.set(active ? '#4e3419' : '#000000');
@@ -324,6 +331,15 @@ function renderList() {
     </button>`).join('');
 }
 
+function holeGroups(part: Part) {
+  const counts = new Map<string, number>();
+  for (const hole of part.holes ?? []) {
+    const key = `${hole.label} · Ø${format(hole.diameter)} × ${format(hole.depth)} mm`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts];
+}
+
 function inspect() {
   const entry = entries.find(e => e.part.id === selected);
   if (!entry) return;
@@ -335,6 +351,7 @@ function inspect() {
     ${p.profile ? `<p>${m.outline_rounded()}</p>` : ''}
     ${p.profileCuts ? `<p>${m.leg_opening()}</p>` : ''}
     ${p.cuts.length ? `<ul class="cut-list">${p.cuts.map(cut => `<li><b>${cut.label}</b><span>${cut.groove ? m.partial_groove() : m.through_cut()}</span><code>${cut.min.map(format).join(', ')}<br>→ ${cut.max.map(format).join(', ')}</code></li>`).join('')}</ul>` : !p.profile ? `<p class="muted">${m.no_cuts()}</p>` : ''}
+    ${holeGroups(p).length ? `<h3>${m.holes()}</h3><ul class="cut-list">${holeGroups(p).map(([label, count]) => `<li><b>${label}</b><span>× ${count}</span></li>`).join('')}</ul>` : ''}
     <button id="inspect-part" class="primary">${m.view_piece_alone()}</button>`;
   $('#inspect-part').onclick = () => setMode('part');
 }
@@ -425,7 +442,7 @@ $('#isolate').onclick = () => {
   $<HTMLInputElement>(`[data-category="${category}"]`).checked = true;
   updateVisibility();
 };
-for (const id of ['edges', 'ghost', 'guides', 'hardware']) $(`#${id}`).onchange = () => { updateVisibility(); updateTransforms(); };
+for (const id of ['edges', 'ghost', 'guides', 'hardware', 'joinery']) $(`#${id}`).onchange = () => { updateVisibility(); updateTransforms(); };
 $('#explode').oninput = () => {
   explosion = Number($<HTMLInputElement>('#explode').value);
   mode = explosion > 0 ? 'exploded' : 'assembled';
@@ -445,7 +462,8 @@ renderer.domElement.addEventListener('pointerup', event => {
   if (event.button !== 0 || down.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 5) return;
   const rect = renderer.domElement.getBoundingClientRect();
   raycaster.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1), camera);
-  const hits = raycaster.intersectObjects(entries.filter(e => e.pivot.visible && !e.mesh.material.transparent).map(e => e.mesh));
+  const joinery = $('#joinery').matches(':checked');
+  const hits = raycaster.intersectObjects(entries.filter(e => e.pivot.visible && (joinery || !e.mesh.material.transparent)).map(e => e.mesh));
   if (hits[0]) select(hits[0].object.userData.partId);
 });
 

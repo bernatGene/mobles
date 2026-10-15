@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Params, Part } from './model';
+import { kindNames, shapes, type JointItem, type Kind } from './joinery';
 
 export type CosmeticHardware = {
   attached: THREE.Group;
@@ -91,5 +92,42 @@ export function disposeHardware(hardware: CosmeticHardware) {
       materials.add(object.material);
     });
   }
+  materials.forEach(material => material.dispose());
+}
+
+const jointColors: Record<Kind, string> = {
+  cam: '#b7bec0', camNut: '#f1efe8', camBolt: '#7d8588', dowel: '#e2c089', drawerDowel: '#e2c089', insert: '#c8a443', bolt: '#2b2d2f',
+};
+
+export function makeJoinery(part: Part, items: JointItem[]) {
+  const group = new THREE.Group();
+  const names = kindNames();
+  const materials = new Map<Kind, THREE.MeshStandardMaterial>();
+  for (const item of items.filter(item => item.part === part.id)) {
+    if (!materials.has(item.kind)) materials.set(item.kind, new THREE.MeshStandardMaterial({
+      color: jointColors[item.kind], metalness: item.kind === 'dowel' || item.kind === 'drawerDowel' || item.kind === 'camNut' ? 0 : 0.6, roughness: 0.4,
+    }));
+    for (const { diameter, from, to } of shapes[item.kind]) {
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(diameter / 2, diameter / 2, to - from, 24), materials.get(item.kind));
+      const center = item.at.map((v, i) => v - part.origin[i]);
+      center[item.axis] += item.dir * (from + to) / 2;
+      mesh.position.set(center[2], center[1], center[0]);
+      if (item.axis === 0) mesh.rotation.x = Math.PI / 2;
+      if (item.axis === 2) mesh.rotation.z = Math.PI / 2;
+      mesh.name = names[item.kind];
+      group.add(mesh);
+    }
+  }
+  return group;
+}
+
+export function disposeJoinery(group: THREE.Group) {
+  group.removeFromParent();
+  const materials = new Set<THREE.Material>();
+  group.traverse(object => {
+    if (!(object instanceof THREE.Mesh)) return;
+    object.geometry.dispose();
+    materials.add(object.material);
+  });
   materials.forEach(material => material.dispose());
 }

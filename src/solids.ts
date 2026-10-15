@@ -1,5 +1,17 @@
 import type { Manifold, ManifoldToplevel } from 'manifold-3d';
 import type { Part, V3 } from './model';
+import type { Axis } from './joinery';
+
+export function makeCylinder(api: ManifoldToplevel, at: V3, axis: Axis, from: number, to: number, diameter: number): Manifold {
+  const cylinder = api.Manifold.cylinder(to - from, diameter / 2, diameter / 2, 48);
+  const rotated = axis === 2 ? cylinder : cylinder.rotate(axis ? [-90, 0, 0] : [0, 90, 0]);
+  const start = [...at] as V3;
+  start[axis] += from;
+  const solid = rotated.translate(start);
+  if (rotated !== cylinder) rotated.delete();
+  cylinder.delete();
+  return solid;
+}
 
 export function makeSolid(api: ManifoldToplevel, part: Part): Manifold {
   const { Manifold: M, CrossSection } = api;
@@ -32,6 +44,10 @@ export function makeSolid(api: ManifoldToplevel, part: Part): Manifold {
     const tool = cube.translate(cut.min);
     cube.delete();
     subtract(tool);
+  }
+  for (const hole of part.holes ?? []) {
+    const end = hole.dir * hole.depth;
+    subtract(makeCylinder(api, hole.at, hole.axis, Math.min(0, end) - 0.01, Math.max(0, end) + 0.01, hole.diameter));
   }
   return solid;
 }

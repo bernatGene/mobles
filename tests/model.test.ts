@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import Module, { type Manifold } from 'manifold-3d';
 import { defaults, dimensions, makeParts, validate } from '../src/model';
-import { makeSolid } from '../src/solids';
+import { makeCylinder, makeSolid } from '../src/solids';
+import { makeJoinery, shapes } from '../src/joinery';
 
 const api = await Module();
 api.setup();
@@ -91,4 +92,47 @@ test('a second parameter set still has usable groove and panel geometry', () => 
       assert.ok(solid.volume() > 0, part.name);
     } finally { solid.delete(); }
   }
+});
+
+test('every hole is drilled into material and blind holes leave at least 3 mm behind', () => {
+  for (const part of makeParts(defaults).filter(p => p.holes)) {
+    const blank = makeSolid(api, { ...part, holes: [] });
+    try {
+      for (const hole of part.holes!) {
+        const end = hole.at[hole.axis] + hole.dir * hole.depth;
+        const left = Math.min(end, part.size[hole.axis] - end);
+        assert.ok(left > -1e-8 && (left < 1e-8 || left >= 3), `${part.name}: ${hole.label} leaves ${left} mm`);
+        const drilled = makeSolid(api, { ...part, holes: [hole] });
+        const removed = blank.volume() - drilled.volume();
+        drilled.delete();
+        const nominal = Math.PI * hole.diameter ** 2 / 4 * hole.depth;
+        assert.ok(removed > 0.95 * nominal, `${part.name}: ${hole.label} at ${hole.at} removes ${removed} of ${nominal} mm³`);
+      }
+    } finally { blank.delete(); }
+  }
+});
+
+test('cams, bolts and dowels sit in their holes without cutting into wood', () => {
+  const wood = makeParts(defaults).map(part => {
+    const local = makeSolid(api, part);
+    const placed = local.translate(part.origin);
+    local.delete();
+    return { part, placed };
+  });
+  try {
+    for (const item of makeJoinery(defaults).items.filter(item => item.kind !== 'insert' && item.kind !== 'camNut')) {
+      for (const { diameter, from, to } of shapes[item.kind]) {
+        const [a, b] = [from * item.dir, to * item.dir].sort((x, y) => x - y);
+        const segment = makeCylinder(api, item.at, item.axis, a, b, diameter);
+        try {
+          for (const { part, placed } of wood) {
+            const overlap = segment.intersect(placed);
+            const volume = overlap.volume();
+            overlap.delete();
+            assert.ok(volume < 1, `${item.kind} at ${item.at} cuts ${volume} mm³ into ${part.name}`);
+          }
+        } finally { segment.delete(); }
+      }
+    }
+  } finally { wood.forEach(({ placed }) => placed.delete()); }
 });

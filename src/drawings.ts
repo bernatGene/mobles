@@ -1,25 +1,36 @@
 import type { ManifoldToplevel } from 'manifold-3d';
 import type { Part, V2 } from './model';
 import { m } from './paraglide/messages.js';
-import { getLocale } from './paraglide/runtime.js';
 
 type Rect = [number, number, number, number];
 type Face = 'near' | 'far' | 'both';
 export type Groove = { rect: Rect; depth: number; face: Face };
+type Side = 'top' | 'bottom' | 'left' | 'right';
+// `face` is 'both' for through holes. Edge holes: `entry` is where the hole starts across the edge, `across` is from the near face.
+export type FaceHole = { at: V2; diameter: number; depth: number; face: Face };
+export type EdgeHole = { side: Side; along: number; entry: number; across: number; diameter: number; depth: number };
 export type Sheet = {
   id: string; title: string; members: Part[]; mirrored: Part[]; material: Part['material']; thickness: number;
-  width: number; height: number; outline: V2[][]; cuts: Rect[]; grooves: Groove[]; scale: number;
+  width: number; height: number; outline: V2[][]; cuts: Rect[]; grooves: Groove[];
+  faceHoles: FaceHole[]; edgeHoles: EdgeHole[]; holeList: { color: string; lines: string[] }[]; holeColors: Record<string, string>;
+  scale: number;
 };
-type Side = 'top' | 'bottom' | 'left' | 'right';
 type Note = { at: V2; dir: V2; text: string; inner?: boolean };
 
 const PAGE = { w: 297, h: 210, frame: 9, tableW: 120, tableH: 22 };
 const AREA = { x: 9, y: 9, w: 279, h: 168 };
 const SCALES = [2, 2.5, 4, 5, 6, 8, 10, 12];
-const ROW = 7, FIRST_ROW = 8, TEXT = 3, NOTE_GAP = 6, MIRROR_GAP = 12;
+const ROW = 7, FIRST_ROW = 8, TEXT = 3, NOTE_GAP = 6, MIRROR_GAP = 10, STRIP_GAP = 6;
+const ORIGIN = { d: 5, text: 2.6, main: '0,0', side: 'z 0' };
+const originWidth = (label: string) => textWidth(label, ORIGIN.text) + 2;
+const LIST = { text: 2.6, row: 4.2, w: PAGE.w - 2 * PAGE.frame - PAGE.tableW - 8 };
+// High-contrast colours, one per hole-list row; blue is taken by grooves.
+const HOLE_COLORS = ['#e6194b', '#3cb44b', '#f58231', '#911eb4', '#9a6324', '#f032e6', '#008080', '#808000', '#000000'];
+export const holeKey = (h: FaceHole | EdgeHole) => 'side' in h ? `e|${h.diameter}|${h.depth}|${h.side}` : `f|${h.diameter}|${h.depth}|${h.face}`;
 const eps = 1e-6;
 const near = (a: number, b: number) => Math.abs(a - b) < eps;
-const fmt = (value: number) => value.toLocaleString(getLocale(), { maximumFractionDigits: 2, useGrouping: false });
+// Decimal point in every locale: a decimal comma is ambiguous in the comma-separated hole lists.
+const fmt = (value: number) => value.toLocaleString('en', { maximumFractionDigits: 2, useGrouping: false });
 const xml = (text: string) => text.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]!);
 const textWidth = (text: string, size = TEXT) => text.length * size * 0.55;
 
@@ -65,6 +76,12 @@ function canonical(part: Part, mirror = false) {
     else rawGrooves.push({ rect, depth, face });
   }
   const cuts = part.cuts.filter(c => !c.groove).map(c => [c.min[u], c.min[v], c.max[u], c.max[v]] as Rect);
+  const T = part.size[n];
+  const rawHoles = (part.holes ?? []).map(h => ({
+    at: [h.at[u], h.at[v]] as V2, step: (h.axis === u ? [h.dir, 0] : [0, h.dir]) as V2,
+    edge: h.axis !== n, n: h.at[n], diameter: h.diameter, depth: h.depth,
+    face: near(h.depth, T) ? 'AB' : near(h.at[n], 0) ? 'A' : 'B',
+  }));
   const outer: V2[] = part.profile ? part.profile.points.map(([x, z]) => [z, x]) : [[0, 0], [W, 0], [W, H], [0, H]];
   const holes = part.profileCuts ?? [];
   const round = (x: number) => Math.round(x * 1000) / 1000 + 0;
@@ -76,13 +93,27 @@ function canonical(part: Part, mirror = false) {
     };
     const seen = (viewedFace === 'B') !== t.flip ? 'B' : 'A';
     const grooves = rawGrooves.map(g => ({ rect: rect(g.rect), depth: g.depth, face: (g.face === 'AB' ? 'both' : g.face === seen ? 'near' : 'far') as Face }));
-    const geometry = { width: t.w, height: t.h, cuts: cuts.map(rect), outer: outer.map(t.map), holes: holes.map(h => h.map(t.map)), grooves };
+    const faceHoles: FaceHole[] = rawHoles.filter(h => !h.edge).map(h => ({
+      at: t.map(h.at), diameter: h.diameter, depth: h.depth,
+      face: h.face === 'AB' ? 'both' : h.face === seen ? 'near' : 'far',
+    }));
+    const edgeHoles: EdgeHole[] = rawHoles.filter(h => h.edge).map(h => {
+      const at = t.map(h.at), next = t.map([h.at[0] + h.step[0], h.at[1] + h.step[1]]);
+      const [du, dv] = [next[0] - at[0], next[1] - at[1]];
+      const side: Side = du > 0.5 ? 'left' : du < -0.5 ? 'right' : dv > 0.5 ? 'bottom' : 'top';
+      const vertical = Math.abs(du) > 0.5;
+      return { side, along: at[vertical ? 1 : 0], entry: at[vertical ? 0 : 1], across: seen === 'A' ? h.n : T - h.n, diameter: h.diameter, depth: h.depth };
+    });
+    const geometry = { width: t.w, height: t.h, cuts: cuts.map(rect), outer: outer.map(t.map), holes: holes.map(h => h.map(t.map)), grooves, faceHoles, edgeHoles };
     const key = JSON.stringify([
       geometry.cuts.map(r => r.map(round).join(',')).sort(),
       pointsKey(geometry.outer), geometry.holes.map(pointsKey).sort(),
       grooves.map(g => [...g.rect.map(round), round(g.depth), g.face].join(',')).sort(),
+      faceHoles.map(h => [...h.at.map(round), h.diameter, round(h.depth), h.face].join(',')).sort(),
+      edgeHoles.map(h => [h.side, round(h.along), round(h.entry), round(h.across), h.diameter, round(h.depth)].join(',')).sort(),
     ]);
-    return { geometry, key, score: grooves.filter(g => g.face !== 'far').length };
+    const nearHoles = faceHoles.filter(h => h.face === 'near').length;
+    return { geometry, key, score: grooves.filter(g => g.face !== 'far').length * 1000 + nearHoles };
   });
   const best = Math.max(...candidates.map(c => c.score));
   return candidates.filter(c => c.score === best).sort((a, b) => a.key < b.key ? -1 : 1)[0];
@@ -118,12 +149,16 @@ export function drawingSheets(api: ManifoldToplevel, parts: Part[]): Sheet[] {
     const sheet: Sheet = {
       id: part.id, title: title(part), members, mirrored, material: part.material,
       thickness: part.size[plane(part)[2]], width: g.width, height: g.height,
-      outline: polygons, cuts: [...g.cuts, ...g.holes.map(bounds)], grooves: g.grooves, scale: SCALES.at(-1)!,
+      outline: polygons, cuts: [...g.cuts, ...g.holes.map(bounds)], grooves: g.grooves,
+      faceHoles: g.faceHoles, edgeHoles: g.edgeHoles, holeList: [], holeColors: {}, scale: SCALES.at(-1)!,
     };
-    const extents = layout(sheet).extents;
+    holeList(sheet);
     const copies = mirrored.length ? 2 : 1;
-    sheet.scale = SCALES.find(s => g.width / s + extents.left + extents.right <= AREA.w
-      && copies * g.height / s + (copies - 1) * MIRROR_GAP + extents.top + extents.bottom <= AREA.h) ?? SCALES.at(-1)!;
+    sheet.scale = SCALES.find(s => {
+      const extents = layout({ ...sheet, scale: s }).extents;
+      return g.width / s + extents.left + extents.right <= AREA.w
+        && copies * g.height / s + (copies - 1) * MIRROR_GAP + extents.top + extents.bottom <= areaHeight(sheet);
+    }) ?? SCALES.at(-1)!;
     return sheet;
   });
   const titles = sheets.map(s => s.title);
@@ -132,6 +167,81 @@ export function drawingSheets(api: ManifoldToplevel, parts: Part[]): Sheet[] {
     if (same.length > 1) sheet.title += ` ${String.fromCharCode(65 + same.indexOf(i))}`;
   });
   return sheets;
+}
+
+// Groups holes by size and face or edge, one colour per group. Positions are blank coordinates:
+// x, y from the lower-left corner of the drawn blank, z from the visible face.
+function holeList(sheet: Sheet) {
+  const groups = new Map<string, (FaceHole | EdgeHole)[]>();
+  for (const hole of [...sheet.faceHoles, ...sheet.edgeHoles]) groups.set(holeKey(hole), [...groups.get(holeKey(hole)) ?? [], hole]);
+  const list = [...groups.entries()].map(([key, holes]) => {
+    const first = holes[0];
+    const size = 'face' in first && first.face === 'both' ? m.hole_through({ diameter: fmt(first.diameter) }) : `Ø${fmt(first.diameter)} × ${fmt(first.depth)}`;
+    let where: string, positions: string;
+    if ('face' in first) {
+      where = first.face === 'far' ? m.hole_far_face() : first.face === 'near' ? m.hole_near_face() : '';
+      positions = coordinates(['x', 'y'], (holes as FaceHole[]).map(h => h.at));
+    } else {
+      const edge = holes as EdgeHole[];
+      const vertical = first.side === 'left' || first.side === 'right';
+      where = { left: m.hole_left_edge(), right: m.hole_right_edge(), top: m.hole_top_edge(), bottom: m.hole_bottom_edge() }[first.side];
+      const limit = vertical ? sheet.width : sheet.height;
+      const entry = edge.some(h => !near(h.entry, 0) && !near(h.entry, limit));
+      positions = entry
+        ? coordinates(['x', 'y', 'z'], edge.map(h => vertical ? [h.entry, h.along, h.across] : [h.along, h.entry, h.across]))
+        : coordinates([vertical ? 'y' : 'x', 'z'], edge.map(h => [h.along, h.across]));
+    }
+    return { key, count: holes.length, size, where, positions };
+  });
+  // Opposite edges with the same pattern share a row.
+  const rows: { keys: string[]; count: number; text: string }[] = [];
+  for (const item of list) {
+    const twin = rows.find(r => r.text === `${item.size}|${item.positions}` && item.key.startsWith('e|'));
+    if (twin) { twin.keys.push(item.key); twin.count += item.count; continue; }
+    rows.push({ keys: [item.key], count: item.count, text: `${item.size}|${item.positions}` });
+  }
+  sheet.holeColors = {};
+  sheet.holeList = rows.map((row, i) => {
+    const color = HOLE_COLORS[i % HOLE_COLORS.length];
+    row.keys.forEach(key => sheet.holeColors[key] = color);
+    const items = row.keys.map(key => list.find(item => item.key === key)!);
+    const where = items.length === 2 ? m.hole_both_edges({ first: items[0].where, second: items[1].where }) : items[0].where;
+    const [size, positions] = row.text.split('|');
+    const text = [`${row.count}× ${size}`, where, positions].filter(Boolean).join(' · ');
+    return { color, lines: wrap(text, LIST.w - 4) };
+  });
+}
+
+// One pair per hole, sorted. The non-breaking space keeps each pair on one line when the row wraps.
+function coordinates(axes: string[], points: number[][]) {
+  const rounded = [...new Map(points.map(p => p.map(v => Number(v.toFixed(3)))).map(p => [p.join(), p])).values()];
+  rounded.sort((a, b) => a.map((v, k) => v - b[k]).find(d => d !== 0) ?? 0);
+  return `${axes.join(',')}: ${rounded.map(p => `(${p.map(fmt).join(',\u00a0')})`).join(' ')}`;
+}
+
+function wrap(text: string, width: number) {
+  const lines = [''];
+  for (const word of text.split(' ')) {
+    const next = lines.at(-1) ? `${lines.at(-1)} ${word}` : word;
+    if (textWidth(next, LIST.text) > width && lines.at(-1)) lines.push(word);
+    else lines[lines.length - 1] = next;
+  }
+  return lines;
+}
+
+const listHeight = (sheet: Sheet) => sheet.holeList.length ? (sheet.holeList.flatMap(r => r.lines).length + 1) * LIST.row + 2 : 0;
+const areaHeight = (sheet: Sheet) => AREA.h - Math.max(0, listHeight(sheet) - PAGE.tableH - 2);
+
+// Centres each chain label on its segment, moving it beside the line or along when it would overlap the previous one.
+function placeLabels(spans: [number, number, number][]) {
+  const ends = [-Infinity, -Infinity];
+  return spans.map(([s, e, width]) => {
+    const [center, half] = [(s + e) / 2, width / 2 + 0.6];
+    const side = center - half >= ends[0] ? 0 : center - half >= ends[1] ? 1 : ends[0] <= ends[1] ? 0 : 1;
+    const at = Math.max(center, ends[side] + half);
+    ends[side] = at + half;
+    return { at, flipped: side === 1 };
+  });
 }
 
 function bounds(points: V2[]): Rect {
@@ -242,23 +352,44 @@ function layout(sheet: Sheet) {
   }
   rows[rows.top.length <= rows.bottom.length ? 'top' : 'bottom'].push([0, W]);
   rows[rows.right.length <= rows.left.length ? 'right' : 'left'].push([0, H]);
-  const rowsExtent = (side: Side) => rows[side].length ? FIRST_ROW + (rows[side].length - 1) * ROW + TEXT + 1 : 0;
+  const hasHoles = sheet.faceHoles.length + sheet.edgeHoles.length > 0;
+  // With a left side view the main origin label sits one step lower, below the side view's.
+  const originDrop = sheet.edgeHoles.some(h => h.side === 'left') ? 2 * ORIGIN.d : ORIGIN.d;
+  // Bottom notes stack below the main origin label.
+  const rowsExtent = (side: Side) => Math.max(rows[side].length ? FIRST_ROW + (rows[side].length - 1) * ROW + TEXT + 2 : 0,
+    side === 'bottom' && hasHoles ? originDrop + 1 : 0);
   const notesOn = (vertical: 'top' | 'bottom') => notes.filter(n => !n.inner && (n.dir[1] > 0) === (vertical === 'top')).length;
   const noteExtent = (side: 'top' | 'bottom') => notesOn(side) ? NOTE_GAP * notesOn(side) + TEXT + 2 : 0;
+  // Side views of the edges that have holes, projected next to the main view.
+  const strips = (['left', 'right', 'top', 'bottom'] as Side[]).flatMap(side => {
+    const holes = sheet.edgeHoles.filter(h => h.side === side);
+    return holes.length ? [{ side, holes, extent: STRIP_GAP + sheet.thickness / sheet.scale + 1 }] : [];
+  });
+  const strip = (side: Side) => strips.find(s => s.side === side)?.extent ?? 0;
+  // Room the origin labels would like; it only uses spare width and never changes the scale. A side view's label points back into the dimension rows' gap when there is one, outward otherwise.
+  const outward = (side: 'left' | 'right') => strip(side) && !rows[side].length ? STRIP_GAP + ORIGIN.d + originWidth(ORIGIN.side) : 0;
+  const originLeft = Math.max(
+    hasHoles ? originDrop + originWidth(ORIGIN.main) : 0,
+    outward('left'), strip('top') || strip('bottom') ? ORIGIN.d + originWidth(ORIGIN.side) : 0);
+  const originRight = outward('right');
   const extents = {
-    top: rowsExtent('top') + noteExtent('top'), bottom: rowsExtent('bottom') + noteExtent('bottom'),
-    left: rowsExtent('left'), right: rowsExtent('right'),
+    top: rowsExtent('top') + noteExtent('top') + strip('top'), bottom: rowsExtent('bottom') + noteExtent('bottom') + strip('bottom'),
+    left: rowsExtent('left') + strip('left'), right: rowsExtent('right') + strip('right'),
   };
-  return { rows, notes, local: localDims, extents, rowsExtent };
+  const originRoom = { left: Math.max(0, originLeft - extents.left), right: Math.max(0, originRight - extents.right) };
+  return { rows, notes, local: localDims, extents, originRoom, originDrop, rowsExtent, noteExtent, strips };
 }
 
 export function sheetSvg(sheet: Sheet, index: number, total: number): string {
   const { width: W, height: H, scale } = sheet;
-  const { rows, notes, local, extents, rowsExtent } = layout(sheet);
+  const { rows, notes, local, extents, originRoom, originDrop, rowsExtent, noteExtent, strips } = layout(sheet);
   const pieceW = W / scale, pieceH = H / scale;
-  const left = AREA.x + (AREA.w - pieceW - extents.left - extents.right) / 2 + extents.left;
+  const spare = AREA.w - pieceW - extents.left - extents.right;
+  const wanted = originRoom.left + originRoom.right;
+  const shift = wanted <= spare ? originRoom.left + (spare - wanted) / 2 : wanted ? spare * originRoom.left / wanted : spare / 2;
+  const left = AREA.x + shift + extents.left;
   const mirrorH = sheet.mirrored.length ? MIRROR_GAP + pieceH : 0;
-  const top = AREA.y + (AREA.h - pieceH - mirrorH - extents.top - extents.bottom) / 2 + extents.top;
+  const top = AREA.y + (areaHeight(sheet) - pieceH - mirrorH - extents.top - extents.bottom) / 2 + extents.top;
   const X = (u: number) => left + u / scale;
   const Y = (v: number) => top + pieceH - v / scale;
   const out: string[] = [];
@@ -268,7 +399,7 @@ export function sheetSvg(sheet: Sheet, index: number, total: number): string {
     out.push(`<text x="${x}" y="${y}" font-size="${size}" ${attrs}>${xml(content)}</text>`);
   const dashed = (x1: number, y1: number, x2: number, y2: number) =>
     out.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#222" stroke-width="0.15" stroke-dasharray="1.2 0.8"/>`);
-  const tick = (x: number, y: number) => line(x - 0.9, y + 0.9, x + 0.9, y - 0.9, 0.35);
+  const tick = (x: number, y: number, color?: string) => line(x - 0.9, y + 0.9, x + 0.9, y - 0.9, 0.35, color);
   const labels: string[] = [];
   const dimension = (x: number, y: number, content: string, vertical = false) => {
     const w = textWidth(content) + 0.8;
@@ -282,8 +413,14 @@ export function sheetSvg(sheet: Sheet, index: number, total: number): string {
       const [x1, y1, x2, y2] = alongU ? [X(u0), Y((v0 + v1) / 2), X(u1), Y((v0 + v1) / 2)] : [X((u0 + u1) / 2), Y(v0), X((u0 + u1) / 2), Y(v1)];
       line(x1, y1, x2, y2, (alongU ? v1 - v0 : u1 - u0) / scale, '#1f5f9e');
     }
+    for (const hole of [...sheet.faceHoles].sort((a, b) => b.diameter - a.diameter)) circle(X(hole.at[0]), Y(hole.at[1]), hole);
+  };
+  const circle = (x: number, y: number, hole: FaceHole | EdgeHole) => {
+    const color = sheet.holeColors[holeKey(hole)];
+    out.push(`<circle cx="${x}" cy="${y}" r="${Math.max(hole.diameter / 2 / scale, 0.7)}" fill="${color}" fill-opacity="0.3" stroke="${color}" stroke-width="0.35"/>`);
   };
   piece(X, Y);
+  const origins: { at: V2; sx: number; sy: number; d: number; label: string }[] = [];
   if (mirrorH) {
     const mirrorTop = Y(0) + extents.bottom + MIRROR_GAP;
     piece(u => X(W - u), v => mirrorTop + pieceH - v / scale);
@@ -315,18 +452,12 @@ export function sheetSvg(sheet: Sheet, index: number, total: number): string {
         const [p0, p1] = [pos(run[0]), pos(run.at(-1)!)];
         horizontal ? line(Math.min(p0, p1) - 1.5, at, Math.max(p0, p1) + 1.5, at) : line(at, Math.min(p0, p1) - 1.5, at, Math.max(p0, p1) + 1.5);
       }
-      let flipped = false, crowded = false;
-      for (let i = 0; i + 1 < coords.length; i++) {
-        if (!kept[i]) { flipped = crowded = false; continue; }
-        const label = fmt(lengths[i]);
-        const [s, e] = [pos(coords[i]), pos(coords[i + 1])];
-        const fits = Math.abs(e - s) >= textWidth(label) + 2;
-        flipped = !fits && crowded && !flipped;
-        crowded = !fits;
-        const along = (s + e) / 2;
+      const toward = horizontal ? 1 : -1;
+      const segments = lengths.flatMap((length, i) => kept[i] ? [{ i, label: fmt(length) }] : []);
+      placeLabels(segments.map(({ i, label }) => [toward * pos(coords[i]), toward * pos(coords[i + 1]), textWidth(label)])).forEach(({ at: along, flipped }, k) => {
         const across = flipped ? at + TEXT + 1 : at - 1;
-        horizontal ? dimension(along, across, label) : dimension(across, along, label, true);
-      }
+        horizontal ? dimension(along, across, segments[k].label) : dimension(across, -along, segments[k].label, true);
+      });
     });
   }
 
@@ -348,21 +479,59 @@ export function sheetSvg(sheet: Sheet, index: number, total: number): string {
     }
   }
 
-  const stacked = { top: 0, bottom: 0 };
-  for (const note of notes) {
-    const vertical = note.dir[1] > 0 ? 'top' : 'bottom';
+  // The anchor furthest along its note's direction takes the innermost row, so leaders never cross.
+  const placed = notes.map(note => {
+    const vertical: 'top' | 'bottom' = note.dir[1] > 0 ? 'top' : 'bottom';
     const [px, py] = [X(note.at[0]), Y(note.at[1])];
     const edge = vertical === 'top' ? Y(H) - rowsExtent('top') : Y(0) + rowsExtent('bottom');
-    const d = note.inner ? 7 : Math.max(8, Math.abs(edge - py) + NOTE_GAP * (1 + stacked[vertical]++) - 2);
     const width = textWidth(note.text) + 2;
-    const reach = px + note.dir[0] * (d + width);
+    const nearest = note.inner ? 7 : Math.max(8, Math.abs(edge - py) + NOTE_GAP - 2);
+    const reach = px + note.dir[0] * (nearest + width);
     const sx = reach > PAGE.w - PAGE.frame - 2 || reach < PAGE.frame + 2 ? -note.dir[0] : note.dir[0];
+    return { note, vertical, px, py, edge, width, sx };
+  }).sort((a, b) => b.sx * b.px - a.sx * a.px);
+  const stacked = { top: 0, bottom: 0 };
+  for (const { note, vertical, px, py, edge, width, sx } of placed) {
+    const d = note.inner ? 7 : Math.max(8, Math.abs(edge - py) + NOTE_GAP * (1 + stacked[vertical]++) - 2);
     const sy = vertical === 'top' ? -1 : 1;
     const [ex, ey] = [px + sx * d, py + sy * d];
     out.push(`<circle cx="${px}" cy="${py}" r="0.45" fill="#222"/>`);
     line(px, py, ex, ey);
     line(ex, ey, ex + sx * width, ey);
     text(ex + sx, ey - 1, note.text, `text-anchor="${sx > 0 ? 'start' : 'end'}"`);
+  }
+
+  for (const { side, holes } of strips) {
+    const vertical = side === 'left' || side === 'right';
+    const sign = side === 'right' || side === 'bottom' ? 1 : -1;
+    const offset = vertical ? rowsExtent(side) : rowsExtent(side) + noteExtent(side);
+    const inner = { right: X(W), left: X(0), top: Y(H), bottom: Y(0) }[side] + sign * (offset + STRIP_GAP);
+    // The near face sits next to the main view; `across` grows away from it.
+    const P = (along: number, across: number): V2 => vertical ? [inner + sign * across / scale, Y(along)] : [X(along), inner + sign * across / scale];
+    const T = sheet.thickness, length = vertical ? H : W;
+    out.push(`<path d="M${[P(0, 0), P(length, 0), P(length, T), P(0, T)].map(p => p.join(',')).join(' L')} Z" fill="#f1f1ec" stroke="#111" stroke-width="0.45"/>`);
+    for (const hole of [...holes].sort((h, k) => k.diameter - h.diameter)) circle(...P(hole.along, hole.across), hole);
+    const sx = !vertical ? -1 : (side === 'right') === !rows[side].length ? 1 : -1;
+    origins.push({ at: P(0, 0), sx, sy: side === 'top' ? -1 : 1, d: ORIGIN.d, label: ORIGIN.side });
+  }
+
+  if (sheet.faceHoles.length || sheet.edgeHoles.length) origins.unshift({ at: [X(0), Y(0)], sx: -1, sy: 1, d: originDrop, label: ORIGIN.main });
+  for (const { at: [x, y], sx: preferred, sy, d, label } of origins) {
+    const reach = x + preferred * (d + originWidth(label));
+    const sx = reach < PAGE.frame + 1 || reach > PAGE.w - PAGE.frame - 1 ? -preferred : preferred;
+    const [ex, ey] = [x + sx * d, y + sy * d];
+    out.push(`<circle cx="${x}" cy="${y}" r="0.6" fill="#222"/>`);
+    line(x, y, ex, ey);
+    line(ex, ey, ex + sx * originWidth(label), ey);
+    text(ex + sx, ey - 1, label, `text-anchor="${sx > 0 ? 'start' : 'end'}"`, ORIGIN.text);
+  }
+
+  let ly = PAGE.h - PAGE.frame - listHeight(sheet) + LIST.row;
+  if (sheet.holeList.length) text(PAGE.frame + 3, ly, m.hole_list_title(), 'fill="#555"', 2.2);
+  for (const { color, lines } of sheet.holeList) {
+    ly += LIST.row;
+    out.push(`<circle cx="${PAGE.frame + 4.2}" cy="${ly - 0.9}" r="1.2" fill="${color}" fill-opacity="0.3" stroke="${color}" stroke-width="0.35"/>`);
+    lines.forEach((content, k) => { if (k) ly += LIST.row; text(PAGE.frame + 7, ly, content, `fill="${color}"`, LIST.text); });
   }
 
   out.push(...labels);

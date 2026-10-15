@@ -10,8 +10,9 @@ start-side edge respectively. All cuts go through the full thickness unless stat
 
 The design is parameterized by several variables which should be editable.
 
-Touching faces are assumed joined. Hinges, rails, handles and joinery details are
-deferred; assume hardware fits the specified clearances and tolerances.
+Touching faces are assumed joined. Hinges, rails, handles and joinery details not
+covered under Joinery are deferred; assume hardware fits the specified clearances and
+tolerances.
 
 # Variables
 
@@ -202,3 +203,105 @@ The body has clearance Rc per side for rails and Bc from the cabinet back panel.
 - thick = T3
 - side x = Ddb - T2 + 2*Tg
 - side z = Wdb - 2*T2 + 2*Tg
+
+# Joinery (tentative)
+
+Joints visible from outside use cam locks plus wood dowels. Inner joints use threaded
+inserts in T1 with bolts through T2, heads recessed. Carcass joints can be taken apart;
+drawer boxes are glued, with cams at the fronts.
+
+## Cam lock: side board ↔ top/bottom board
+
+- count = 4 joints, 2 cams and 3 dowels each
+- The T2 board's end edge butts into the T1 side's inner face, so the cam housing goes
+  in the T2 board and the cam bolt in the side.
+- Cam faces: top board's top face (hidden by the desk; tighten before fitting it),
+  bottom board's underside.
+
+### Hardware
+
+Variables are defined in each hardware file's Interface section.
+
+- Cam lock: [hardware/cam-lock.md](hardware/cam-lock.md). Cbd × Cbh cam bore in the T2
+  cam face, centre at Cb from the side's inner face. Ced × Ceh edge bore from the T2 end
+  edge, at Ca from the cam face. Cnd × Cnh receiving hole in the side's inner face, on
+  the same axis.
+- Dowel: [hardware/dowel.md](hardware/dowel.md). Wd × Wh holes in the T2 end edge,
+  centred in T2 thickness, and in the side's inner face.
+
+### Positions
+
+In x along the T2 board, with d its depth (D top, D - T2 bottom):
+
+- Dowels at x = 40, d/2, d - 40.
+- Cams at x = 80, d - 80.
+
+## Insert joint: desk ↔ top board
+
+- count = 4
+- Inserts in the desk underside, bolts up through the top board.
+- Hardware: [hardware/insert.md](hardware/insert.md). Id × Ih in the desk, Ibd through
+  the top board, Icd × Ich counterbore on its underside (drawers clear it by Dtol).
+
+### Positions
+
+In (x, z) on the top board, with Lt = L - 2*T1:
+
+- (60, 60), (D - 60, 60), (60, Lt - 60), (D - 60, Lt - 60).
+
+## Insert joint: center panel ↔ top board
+
+- count = 2
+- Inserts in the center panel's top edge where it meets the top board's underside,
+  centred in T1. Bolts down through the top board, before the desk is fitted.
+- Hardware: [hardware/insert.md](hardware/insert.md). Id × Ih in the panel edge, Ibd
+  through the top board, Icd × Ich counterbore on its top face (under the desk).
+
+### Positions
+
+In (x, z) on the top board:
+
+- (Dl + 40, Lt/2), (D - T2 - 40, Lt/2).
+
+## Center panel ↔ bottom board
+
+No fastener. The back strip sits in the bottom board's notch, which locates it in x and z;
+the top joint holds it vertically. The front bearing strip (x = Dl/2…Dl) is too short
+for an insert.
+
+## Drawer boxes
+
+- Side ↔ front: 1 cam lock and 2 glued dowels per joint, so pulling the drawer loads the
+  cam rather than the glue. Cam in the side's inner face at Cb from the front, edge bore
+  in the side's front end edge, insert nut in the front's inner face, Cnd × Cnf.
+  Dowels into the side's front end edge (Wh), centred in T2, and the front's inner face (Wf).
+- count = 4 drawers × 2 cams and 8 dowels, Ø8 × 30, glued both sides.
+- Back ↔ side: into the back's end edge (Wh), centred in T2, and the side's inner face (Wf).
+- Hardware: [hardware/dowel.md](hardware/dowel.md).
+
+### Positions
+
+Dowels two per joint, at y = (Hd - Dtol)/2 ± 25 from the drawer bottom edge. Cams at
+y = (Hd - Dtol)/2.
+
+## Holes per board
+
+Variables from the hardware files. All holes are blind unless stated. "Centred" holes
+snap down to whole millimetres (7 in a 15 board), so drawings avoid half-millimetre
+coordinates.
+
+- Side board, inner face: 4 × Cnd × Cnh cam nut holes, 6 × Wd × Wh dowel holes.
+- Top board:
+  - Top face: 4 × Cbd × Cbh cam bores, 2 × Icd × Ich counterbores (center panel).
+  - Underside: 4 × Icd × Ich counterbores (desk).
+  - End edges: 4 × Ced × Ceh edge bores, 6 × Wd × Wh dowel holes.
+  - 6 × Ibd through holes, one under each counterbore.
+- Bottom board: underside 4 × Cbd × Cbh cam bores; end edges 4 × Ced × Ceh edge bores,
+  6 × Wd × Wh dowel holes.
+- Desk, underside: 4 × Id × Ih insert holes.
+- Center panel, top edge: 2 × Id × Ih insert holes, centred in T1.
+- Drawer front, inner face: 4 × Wd × Wf dowel holes, 2 × Cnd × Cnf cam nut holes.
+- Drawer side:
+  - Inner face: 2 × Wd × Wf dowel holes, 1 × Cbd × Cbh cam bore.
+  - Front end edge: 2 × Wd × Wh dowel holes, 1 × Ced × Ceh edge bore.
+- Drawer back, end edges: 4 × Wd × Wh dowel holes.

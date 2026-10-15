@@ -15,11 +15,17 @@ test('solid viewer loads, inspects, moves, rebuilds and exports', async ({ page 
   const hardwareOff = await page.locator('canvas').screenshot();
   expect(hardwareOn.equals(hardwareOff)).toBe(false);
   await page.locator('#hardware').check();
+  await page.locator('#joinery').check();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const joineryOn = await page.locator('canvas').screenshot({ path: testInfo.outputPath('joinery.png') });
+  expect(joineryOn.equals(hardwareOn)).toBe(false);
+  await page.locator('#joinery').uncheck();
   await page.locator('[data-part="door-left"]').click();
   await expect(page.locator('#inspect')).toContainText('510 mm');
 
   await page.locator('[data-part="center"]').click();
   await expect(page.locator('#inspect h2')).toHaveText('Center panel');
+  await expect(page.locator('#inspect')).toContainText('Threaded insert · Ø8.5 × 18 mm');
   await page.locator('#inspect-part').click();
   await expect(page.locator('#visible-count')).toHaveText('1 / 30 visible');
   await page.locator('[data-view="side"]').click();

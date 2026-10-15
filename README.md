@@ -16,6 +16,8 @@ npm run build          # static site in dist/ (serve over HTTP for the wasm)
 Orbit, explode, isolate pieces, open doors and drawers, and edit the parameters
 (saved in local storage, importable/exportable as JSON). **Export 3D** writes the
 visible pieces as GLB in metres. Knobs, hinges and rails are cosmetic only.
+**Joinery** ghosts the boards and shows the cams, bolts, dowels and inserts in their
+drilled holes; hardware specs live in `src/joinery.ts` and `hardware/`.
 
 Parameters, part geometry and placement live in `src/model.ts`; `DEFINITION.md`
 remains the source of truth.
@@ -36,6 +38,9 @@ fits). Identical boards share a sheet; mirror-image pairs (left/right) share a s
 listed as "n + n mirrored", drawn with the grooves facing the viewer and an
 undimensioned mirror image below.
 
-Through cuts are dimensioned by chained lengths from the board edges. Grooves are
+Through cuts are dimensioned by chained lengths from the board edges. Holes are drawn
+only as coloured circles, on the face and in a side view of each drilled edge; a list
+next to the title block gives each colour's size, face or edge, and positions in blank
+coordinates (x, y from the lower-left corner, z from the visible face). Grooves are
 drawn as a line of their real width with one 45° note giving width, depth and edge
 offset. Dimensions are nominal, in mm, with no fit allowance.

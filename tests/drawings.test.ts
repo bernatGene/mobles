@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import Module from 'manifold-3d';
 import { defaults, makeParts } from '../src/model';
-import { drawingSheets, sheetSvg } from '../src/drawings';
+import { drawingSheets, holeKey, sheetSvg } from '../src/drawings';
 import { makeSolid } from '../src/solids';
 import { overwriteGetLocale, type Locale } from '../src/paraglide/runtime.js';
 
@@ -35,7 +35,8 @@ test('outlines and groove depths reconstruct the volume of each solid', () => {
     }, 0), 0);
     const grooveVolume = sheet.grooves.reduce((sum, { rect: [u0, v0, u1, v1], depth, face }) =>
       sum + (u1 - u0) * (v1 - v0) * depth * (face === 'both' ? 2 : 1), 0);
-    const solid = makeSolid(api, sheet.members[0]);
+    // Overlapping holes make the volume ambiguous; hole coverage is checked separately.
+    const solid = makeSolid(api, { ...sheet.members[0], holes: [] });
     try {
       assert.ok(Math.abs(Math.abs(area) * sheet.thickness - grooveVolume - solid.volume()) < 0.01, sheet.title);
     } finally { solid.delete(); }
@@ -64,4 +65,20 @@ test('sheets render in Catalan', () => {
     for (const text of ['Panell central', 'Ranura de 3 d&apos;ample', 'a les dues cares', 'ESCALA', 'GRUIX']) assert.ok(svg.includes(text), text);
     assert.ok(sheets.some(s => s.title === 'Frontal de calaix'));
   } finally { locale = 'en'; }
+});
+
+test('every hole appears on its sheet and in a hole list row of its own colour', () => {
+  for (const sheet of drawingSheets(api, makeParts(defaults))) {
+    const holes = sheet.members[0].holes ?? [];
+    assert.equal(sheet.faceHoles.length + sheet.edgeHoles.length, holes.length, sheet.title);
+    for (const hole of [...sheet.faceHoles, ...sheet.edgeHoles]) assert.ok(sheet.holeColors[holeKey(hole)], sheet.title);
+    assert.equal(new Set(Object.values(sheet.holeColors)).size, sheet.holeList.length, sheet.title);
+  }
+});
+
+test('hole positions list one coordinate pair per hole', () => {
+  const lines = drawingSheets(api, makeParts(defaults)).flatMap(s => s.holeList.map(r => r.lines.join(' ').replaceAll('\u00a0', ' ')));
+  assert.ok(lines.some(l => l.endsWith('x,y: (60, 60) (60, 240) (471, 80) (471, 245) (881, 60) (881, 240)')));
+  assert.ok(lines.some(l => l.endsWith('y,z: (80, 8) (220, 8)')));
+  assert.ok(lines.some(l => l.endsWith('x,y,z: (15, 40, 14) (15, 205, 14)')));
 });

@@ -1,4 +1,5 @@
 import { m } from './paraglide/messages.js';
+import { makeJoinery, type Hole } from './joinery';
 
 export type V3 = [number, number, number];
 export type V2 = [number, number];
@@ -28,6 +29,7 @@ export type Part = {
   size: V3; origin: V3; cuts: Cut[]; explode: V3;
   profile?: { plane: 'xy' | 'xz'; points: V2[] };
   profileCuts?: V2[][];
+  holes?: Hole[];
   motion?: string;
   note?: string;
 };
@@ -183,6 +185,10 @@ export function makeParts(p: Params): Part[] {
         explode: [common.explode[0], common.explode[1] - 65, common.explode[2]], cuts: [],
       });
     }
+  }
+  for (const hole of makeJoinery(p).holes) {
+    const part = parts.find(candidate => candidate.id === hole.part)!;
+    (part.holes ??= []).push({ ...hole, at: hole.at.map((v, i) => v - part.origin[i]) as V3 });
   }
   return parts;
 }
