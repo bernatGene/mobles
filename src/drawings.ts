@@ -510,6 +510,11 @@ export function sheetSvg(sheet: Sheet, index: number, total: number): string {
     const P = (along: number, across: number): V2 => vertical ? [inner + sign * across / scale, Y(along)] : [X(along), inner + sign * across / scale];
     const T = sheet.thickness, length = vertical ? H : W;
     out.push(`<path d="M${[P(0, 0), P(length, 0), P(length, T), P(0, T)].map(p => p.join(',')).join(' L')} Z" fill="#f1f1ec" stroke="#111" stroke-width="0.45"/>`);
+    // Outline edges parallel to the view direction, where the nearest face seen from this side changes depth.
+    const axis = vertical ? 1 : 0;
+    const reach = (c: number) => outlineReach(sheet.outline, c, axis, side === 'right' || side === 'top' ? 1 : -1);
+    const steps = new Set(sheet.outline.flatMap(polygon => polygon.filter((p, i) => near(p[axis], polygon[(i + 1) % polygon.length][axis])).map(p => p[axis])));
+    for (const c of steps) if (c > eps && c < length - eps && !near(reach(c - 0.5), reach(c + 0.5))) line(...P(c, 0), ...P(c, T), 0.35, '#111');
     for (const hole of [...holes].sort((h, k) => k.diameter - h.diameter)) circle(...P(hole.along, hole.across), hole);
     const sx = !vertical ? -1 : (side === 'right') === !rows[side].length ? 1 : -1;
     origins.push({ at: P(0, 0), sx, sy: side === 'top' ? -1 : 1, d: ORIGIN.d, label: ORIGIN.side });

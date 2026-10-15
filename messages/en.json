@@ -169,6 +169,8 @@
   "hole_insert": "Threaded insert",
   "hole_bolt": "Bolt clearance",
   "hole_counterbore": "Bolt head counterbore",
+  "hole_hinge_cup": "Hinge cup",
+  "hole_pilot": "Pilot hole",
   "hw_cam": "Cam",
   "hw_cam_nut": "Cam bolt insert nut",
   "hw_cam_bolt": "Cam bolt",

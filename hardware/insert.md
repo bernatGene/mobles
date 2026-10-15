@@ -38,7 +38,7 @@ HAISHANG M6x15 flanged insert, zinc plated carbon steel, hex socket drive.
 
 - Source: Amazon.es [B0FX1YFTKS](https://www.amazon.es/dp/B0FX1YFTKS), 20 + hex key,
   €7.49 (€0.37/u).
-- Needed: 6, plus spares.
+- Needed: 7, plus spares.
 - Length 15 is from the listing. Outer thread ~Ø10.5 and flange ~Ø12 are inferred from
   comparable listings; measure on arrival.
 - Countersink the hole to the flange Ø by ~1 so the flange doesn't lift the face veneer.

@@ -263,11 +263,21 @@ In (x, z) on the top board:
 
 - (Dl + 40, Lt/2), (D - T2 - 40, Lt/2).
 
-## Center panel ↔ bottom board
+## Insert joint: center panel ↔ bottom board
 
-No fastener. The back strip sits in the bottom board's notch, which locates it in x and z;
-the top joint holds it vertically. The front bearing strip (x = Dl/2…Dl) is too short
-for an insert.
+- count = 1
+- Insert in the underside of the center panel's front bearing strip (x = Dl/2…Dl), which
+  rests on the bottom board. Bolt up through the bottom board, head on its underside with
+  no counterbore: Icd wouldn't clear the notch edge at x = Dl/2. Engagement = Ibl - T2.
+- Hardware: [hardware/insert.md](hardware/insert.md). Id × Ih in the panel, Ibd through
+  the bottom board.
+
+### Positions
+
+In (x, z) on the bottom board:
+
+- (Dl - 13, Lt/2). Leaves 8.75 of panel in front of the insert and 3.5 of board between
+  the bolt hole and the notch.
 
 ## Drawer boxes
 
@@ -284,24 +294,55 @@ for an insert.
 Dowels two per joint, at y = (Hd - Dtol)/2 ± 25 from the drawer bottom edge. Cams at
 y = (Hd - Dtol)/2.
 
+## Hinges
+
+- count = 2 doors × 2 hinges
+- Cup in the door's back face, mounting plate on the side board's inner face. The door is
+  inset, so the plate screw line is Hpx behind the door's back face: x = D - T2 - Hpx.
+- Hardware: [hardware/hinge.md](hardware/hinge.md). Only the cup and screw pilot holes
+  are drilled.
+
+### Positions
+
+Cups at Hce from the door's hinge edge, Hy from its top and bottom edges. Wing pilots
+Hss apart vertically, Hsx from the cup centre toward the door's middle. Plate pilots
+Hps apart vertically, centred on the cup height.
+
+## Drawer rails
+
+- count = 4 pairs, side-mount, in the Rc clearance on each side of the drawer body.
+- Hardware: [hardware/drawer-rail.md](hardware/drawer-rail.md).
+- Both members' front ends flush with the drawer body's front, x = D - T2, closed.
+- Rail centreline Ry below the middle of the drawer side, clear of the drawer cam.
+- Cabinet members screw through the round holes, except the right column's center-panel
+  rail, which uses the slots Rks behind them, so the center panel's two faces don't share
+  pilot positions.
+- Drawer pilots at Rd from the front, snapped down to whole millimetres; cabinet pilots
+  at Rk from the front, on the side boards and both faces of the center panel.
+
 ## Holes per board
 
 Variables from the hardware files. All holes are blind unless stated. "Centred" holes
 snap down to whole millimetres (7 in a 15 board), so drawings avoid half-millimetre
 coordinates.
 
-- Side board, inner face: 4 × Cnd × Cnh cam nut holes, 6 × Wd × Wh dowel holes.
+- Side board, inner face: 4 × Cnd × Cnh cam nut holes, 6 × Wd × Wh dowel holes,
+  4 × Hpd × Hph hinge plate pilots, 6 × Rpd × Rph rail pilots.
+- Center panel, each face: 6 × Rpd × Rph rail pilots.
+- Door, back face: 2 × Hcd × Hch hinge cups, 4 × Hpd × Hph wing pilots.
 - Top board:
   - Top face: 4 × Cbd × Cbh cam bores, 2 × Icd × Ich counterbores (center panel).
   - Underside: 4 × Icd × Ich counterbores (desk).
   - End edges: 4 × Ced × Ceh edge bores, 6 × Wd × Wh dowel holes.
   - 6 × Ibd through holes, one under each counterbore.
 - Bottom board: underside 4 × Cbd × Cbh cam bores; end edges 4 × Ced × Ceh edge bores,
-  6 × Wd × Wh dowel holes.
+  6 × Wd × Wh dowel holes; 1 × Ibd through hole (center panel).
 - Desk, underside: 4 × Id × Ih insert holes.
-- Center panel, top edge: 2 × Id × Ih insert holes, centred in T1.
+- Center panel, top edge: 2 × Id × Ih insert holes, centred in T1. Bearing strip
+  underside: 1 × Id × Ih insert hole, centred in T1.
 - Drawer front, inner face: 4 × Wd × Wf dowel holes, 2 × Cnd × Cnf cam nut holes.
 - Drawer side:
   - Inner face: 2 × Wd × Wf dowel holes, 1 × Cbd × Cbh cam bore.
+  - Outer face: 3 × Rpd × Rph rail pilots.
   - Front end edge: 2 × Wd × Wh dowel holes, 1 × Ced × Ceh edge bore.
 - Drawer back, end edges: 4 × Wd × Wh dowel holes.

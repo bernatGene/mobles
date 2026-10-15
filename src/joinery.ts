@@ -4,6 +4,8 @@ import { m } from './paraglide/messages.js';
 export const cam = { Cbd: 12, Cbh: 10.5, Cb: 28, Ca: 7, Ced: 8, Ceh: 28, Cnd: 10, Cnh: 12, Cnf: 11 };
 export const dowel = { Wd: 8, Wh: 21, Wf: 11 };
 export const insert = { Id: 8.5, Ih: 18, Ibd: 7, Icd: 12, Ich: 4 };
+export const hinge = { Hcd: 35, Hch: 11.5, Hce: 23, Hy: 80, Hwl: 65, Hss: 52, Hsx: 9, Hml: 54, Hps: 32, Hpx: 37, Hpd: 3, Hph: 10 };
+export const rail = { Rl: 250, Rh: 45, Rt: 12.7, Rk: [35, 67, 163], Rd: [24.5, 120.5, 216.5], Ry: -10, Rks: 12, Rpd: 3, Rph: 10 };
 
 export type Axis = 0 | 1 | 2;
 export type Hole = { part: string; at: V3; axis: Axis; dir: number; diameter: number; depth: number; label: string };
@@ -31,8 +33,8 @@ export const kindNames = (): Record<Kind, string> => ({
 });
 
 export function makeJoinery(p: Params) {
-  const { H, D, L, T1, T2, T3, Hl, Dl, Hd, Rc, Bc } = p;
-  const { Wdb, Ddb, drawerHeight: h } = dimensions(p);
+  const { H, D, L, T1, T2, T3, Hl, Dl, Hd, Rc, Bc, Dtol } = p;
+  const { Wdb, Ddb, drawerHeight: h, doorHeight } = dimensions(p);
   const holes: Hole[] = [];
   const items: JointItem[] = [];
   const hole = (part: string, at: V3, axis: Axis, dir: number, diameter: number, depth: number, label: string) =>
@@ -82,6 +84,27 @@ export function makeJoinery(p: Params) {
   const Lt = L - 2 * T1;
   for (const [x, z] of [[60, 60], [D - 60, 60], [60, Lt - 60], [D - 60, Lt - 60]]) bolted('desk', H - T1, 1, x, T1 + z);
   for (const x of [Dl + 40, D - T2 - 40]) bolted('center', H - T1 - T2, -1, x, (L - T1) / 2 + half(T1));
+  // No counterbore: Ø12 wouldn't clear the notch edge. The head sits on the hidden underside.
+  const bearing: V3 = [Dl - 13, Hl + T2, (L - T1) / 2 + half(T1)];
+  hole('center', bearing, 1, 1, insert.Id, insert.Ih, m.hole_insert());
+  hole('bottom-board', bearing, 1, -1, insert.Ibd, T2, m.hole_bolt());
+  item('center', 'insert', bearing, 1, 1);
+  item('bottom-board', 'bolt', [Dl - 13, Hl - insert.Ich, bearing[2]], 1, 1);
+
+  // Cup in the door's back face, mounting plate on the side board's inner face, 37 behind the inset door.
+  for (const right of [false, true]) {
+    const door = right ? 'door-right' : 'door-left';
+    const inward = right ? -1 : 1;
+    const cupZ = (right ? L - T1 - Dtol : T1 + Dtol) + inward * hinge.Hce;
+    for (const y of [Hl + Dtol + hinge.Hy, Hl + Dtol + doorHeight - hinge.Hy]) {
+      hole(door, [D - T2, y, cupZ], 0, 1, hinge.Hcd, hinge.Hch, m.hole_hinge_cup());
+      for (const dy of [-1, 1]) {
+        hole(door, [D - T2, y + dy * hinge.Hss / 2, cupZ + inward * hinge.Hsx], 0, 1, hinge.Hpd, hinge.Hph, m.hole_pilot());
+        hole(right ? 'side-right' : 'side-left', [D - T2 - hinge.Hpx, y + dy * hinge.Hps / 2, right ? L - T1 : T1], 2, -inward,
+          hinge.Hpd, hinge.Hph, m.hole_pilot());
+      }
+    }
+  }
 
   // Glued Ø8 × 30: Wh into the edge board, Wf into the face board.
   const glued = (edgePart: string, facePart: string, at: V3, axis: Axis, dir: number) => {
@@ -109,6 +132,17 @@ export function makeJoinery(p: Params) {
         item(side, 'cam', camAt, 2, inward);
         item(`${id}-front`, 'camNut', boltAt, 0, 1);
         item(`${id}-front`, 'camBolt', boltAt, 0, -1);
+      }
+      const walls = column ? ['center', 'side-right'] : ['side-left', 'center'];
+      for (const index of [0, 1]) {
+        const railY = y + half(h) + rail.Ry;
+        // The right column's center rail uses its slots, Rks behind the round holes, so the center panel's two faces don't share pilots.
+        const slot = column && !index ? rail.Rks : 0;
+        const outer = bodyZ + (index ? Wdb : 0);
+        const out = index ? 1 : -1;
+        // Drawer pilots snap to whole millimetres, toward the back; the rail's slots take up the half.
+        for (const d of rail.Rd) hole(`${id}-side-${index}`, [Math.floor(frontX - d), railY, outer], 2, -out, rail.Rpd, rail.Rph, m.hole_pilot());
+        for (const k of rail.Rk) hole(walls[index], [frontX - k - slot, railY, outer + out * Rc], 2, out, rail.Rpd, rail.Rph, m.hole_pilot());
       }
       for (const dy of [half(h) - 25, half(h) + 25]) {
         for (const index of [0, 1]) {

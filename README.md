@@ -15,7 +15,8 @@ npm run build          # static site in dist/ (serve over HTTP for the wasm)
 
 Orbit, explode, isolate pieces, open doors and drawers, and edit the parameters
 (saved in local storage, importable/exportable as JSON). **Export 3D** writes the
-visible pieces as GLB in metres. Knobs, hinges and rails are cosmetic only.
+visible pieces as GLB in metres. Knobs are cosmetic only; hinge and
+rail holes are drilled.
 **Joinery** ghosts the boards and shows the cams, bolts, dowels and inserts in their
 drilled holes; hardware specs live in `src/joinery.ts` and `hardware/`.
 

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Params, Part } from './model';
-import { kindNames, shapes, type JointItem, type Kind } from './joinery';
+import { hinge, kindNames, rail, shapes, type JointItem, type Kind } from './joinery';
 
 export type CosmeticHardware = {
   attached: THREE.Group;
@@ -25,13 +25,15 @@ export function makeHardware(part: Part, p: Params): CosmeticHardware {
     group.add(mesh);
     return mesh;
   };
-  const cylinder = (name: string, radius: number, depth: number, x: number, y: number, z: number, material = dark) => {
+  const cylinder = (name: string, radius: number, depth: number, x: number, y: number, z: number, material = dark,
+    group = hardware.attached, alongX = false) => {
     const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, depth, 32), material);
-    mesh.rotation.x = Math.PI / 2;
+    if (alongX) mesh.rotation.z = Math.PI / 2;
+    else mesh.rotation.x = Math.PI / 2;
     mesh.position.set(x, y, z);
     mesh.name = name;
     mesh.castShadow = true;
-    hardware.attached.add(mesh);
+    group.add(mesh);
   };
   if (part.category === 'fronts' || part.category === 'doors') {
     const door = part.category === 'doors';
@@ -47,28 +49,40 @@ export function makeHardware(part: Part, p: Params): CosmeticHardware {
     hardware.supportId = end ? rightColumn ? 'side-right' : 'center' : rightColumn ? 'center' : 'side-left';
     const sign = end ? 1 : -1;
     const edge = end ? part.size[2] : 0;
-    const width = p.Rc * 0.28;
-    const height = Math.min(35, part.size[1] * 0.55);
-    const depth = part.size[0];
-    box(hardware.fixed, 'Fixed rail channel (cosmetic)', [width, height, depth * 0.96],
-      [edge + sign * p.Rc * 0.8, part.size[1] / 2, depth / 2], dark);
-    box(hardware.middle, 'Telescoping rail channel (cosmetic)', [width, height * 0.7, depth * 0.9],
-      [edge + sign * p.Rc * 0.5, part.size[1] / 2, depth / 2]);
-    box(hardware.attached, 'Drawer rail channel (cosmetic)', [width, height * 0.42, depth * 0.85],
-      [edge + sign * p.Rc * 0.2, part.size[1] / 2, depth / 2]);
+    const { Rl, Rh, Rt, Ry } = rail;
+    const y = Math.floor(part.size[1] / 2) + Ry;
+    const x = part.size[0] - Rl / 2;
+    box(hardware.fixed, 'Fixed rail channel (cosmetic)', [Rt / 3, Rh, Rl],
+      [edge + sign * Rt * 5 / 6, y, x], dark);
+    box(hardware.middle, 'Telescoping rail channel (cosmetic)', [Rt / 3, Rh * 0.8, Rl * 0.97],
+      [edge + sign * Rt / 2, y, x]);
+    box(hardware.attached, 'Drawer rail channel (cosmetic)', [Rt / 3, Rh * 0.6, Rl],
+      [edge + sign * Rt / 6, y, x]);
   }
   if (part.category === 'doors') {
     const right = part.id.endsWith('right');
     hardware.supportId = right ? 'side-right' : 'side-left';
-    const cupX = right ? part.size[2] - 23 : 23;
-    const mountX = right ? part.size[2] + p.Dtol : -p.Dtol;
-    const inset = Math.min(75, part.size[1] / 4);
-    for (const y of [inset, part.size[1] - inset]) {
-      cylinder('Hinge cup (cosmetic)', Math.min(17.5, part.size[2] / 8), 3, cupX, y, -1.5, steel);
-      box(hardware.fixed, 'Hinge mounting plate (cosmetic)', [2, 42, 24], [mountX, y, -38]);
-      const anchor = new THREE.Vector3(mountX, y, -38);
-      const target = new THREE.Vector3(cupX, y, -4);
-      const arm = box(hardware.fixed, 'Hinge linkage (cosmetic)', [5, 1, 8], [0, 0, 0]);
+    // Door-local x from the hinge edge inward, and the side board's inner face.
+    const s = right ? -1 : 1;
+    const X = (d: number) => (right ? part.size[2] : 0) + s * d;
+    const wall = X(-p.Dtol);
+    const { Hcd, Hch, Hce, Hy, Hwl, Hss, Hsx, Hml, Hps, Hpx } = hinge;
+    const wing = [Hce - Hcd / 2 + 4, Hce + Hsx + 7];
+    for (const y of [Hy, part.size[1] - Hy]) {
+      cylinder('Hinge cup (cosmetic)', Hcd / 2, Hch, X(Hce), y, Hch / 2, steel);
+      cylinder('Hinge cup rim (cosmetic)', Hcd / 2 + 1.5, 1.2, X(Hce), y, -0.6, steel);
+      box(hardware.attached, 'Hinge wing (cosmetic)', [wing[1] - wing[0], Hwl, 1.2],
+        [X((wing[0] + wing[1]) / 2), y, -0.6]);
+      for (const dy of [-Hss / 2, Hss / 2]) cylinder('Hinge screw (cosmetic)', 4, 1.5, X(Hce + Hsx), y + dy, -1.95);
+      box(hardware.fixed, 'Hinge mounting plate (cosmetic)', [2, Hml, 14], [wall + s, y, -Hpx]);
+      box(hardware.fixed, 'Hinge mounting plate (cosmetic)', [8, 20, 40], [wall + s * 4, y, -Hpx]);
+      for (const dy of [-Hps / 2, Hps / 2]) cylinder('Hinge screw (cosmetic)', 4, 1.5, wall + s * 2.75, y + dy, -Hpx, dark, hardware.fixed, true);
+      const armEnd = -Hpx - 30;
+      box(hardware.fixed, 'Hinge arm (cosmetic)', [10, 18, -12 - armEnd], [wall + s * 13, y, (armEnd - 12) / 2]);
+      cylinder('Hinge arm screw (cosmetic)', 4.5, 1.5, wall + s * 18.75, y, -Hpx - 12, dark, hardware.fixed, true);
+      const anchor = new THREE.Vector3(wall + s * 13, y, -12);
+      const target = new THREE.Vector3(X(Hce), y, -2);
+      const arm = box(hardware.fixed, 'Hinge linkage (cosmetic)', [14, 1, 14], [0, 0, 0]);
       hardware.links.push({ arm, anchor, target });
     }
   }
